@@ -1,0 +1,9 @@
+{
+  "name": "cs2-api",
+  "version": "2.0.0",
+  "description": "HAU CS2 社团管理系统 v2 业务云函数",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.0.0"
+  }
+}
