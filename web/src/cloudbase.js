@@ -12,12 +12,3 @@ export const app = cloudbase.init({
 })
 
 export const auth = app.auth
-
-
-export const app = cloudbase.init({
-  env: ENV_ID,
-  accessKey: PUBLISHABLE_KEY,
-  auth: { detectSessionInUrl: true }
-})
-
-export const auth = app.auth

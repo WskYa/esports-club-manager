@@ -1,10 +1,21 @@
 // 业务 API 封装：统一走云函数 cs2-api
-import { app } from './cloudbase'
+import { app, auth } from './cloudbase'
+
+// 调用云函数；未登录/匿名会话过期时网关返回 INVALID_CREDENTIALS，
+// 自动重建匿名会话并重试一次（登录/注册页未登录场景的兜底）
+async function callWithRetry(action, data) {
+  let res = await app.callFunction({ name: 'cs2-api', data: { action, ...data } })
+  if (res && (res.code === 'INVALID_CREDENTIALS' || (res.result === undefined && res.code))) {
+    await auth.signInAnonymously().catch(() => {})
+    res = await app.callFunction({ name: 'cs2-api', data: { action, ...data } })
+  }
+  return res
+}
 
 export async function call(action, data = {}) {
-  const res = await app.callFunction({ name: 'cs2-api', data: { action, ...data } })
+  const res = await callWithRetry(action, data)
   const r = res && res.result
-  if (!r) throw new Error('服务无响应，请稍后重试')
+  if (!r) throw new Error(res && res.message ? res.message : '服务无响应，请稍后重试')
   if (r.ok === false) throw new Error(r.error || '操作失败')
   return r
 }

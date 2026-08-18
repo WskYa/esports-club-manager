@@ -84,6 +84,8 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       this.guest = false
       this.unread = 0
+      // 登出后保持匿名会话，未登录态调用云函数需要
+      await auth.signInAnonymously().catch(() => {})
     },
     async refreshUnread() {
       if (this.guest) { this.unread = 0; return }
