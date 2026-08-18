@@ -131,10 +131,6 @@ async function guestLogin() {
 
       <div class="auth-divider">或</div>
       <button class="btn full" @click="guestLogin" :disabled="loading">👤 游客浏览</button>
-
-      <div class="demo-hint">
-        🔑 演示账号：管理员 <code>1000000000 / Admin123456</code> · 队长 <code>2024000011 / Demo12345</code>
-      </div>
     </div>
   </div>
 </template>
