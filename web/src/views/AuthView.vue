@@ -119,11 +119,11 @@ async function guestLogin() {
         </div>
         <div class="field">
           <span>密码（至少 8 位，含字母和数字）</span>
-          <input v-model="regForm.password" type="password" placeholder="设置密码">
+          <input v-model="regForm.password" type="password" placeholder="设置密码" maxlength="72">
         </div>
         <div class="field">
           <span>确认密码</span>
-          <input v-model="regForm.password2" type="password" placeholder="再次输入">
+          <input v-model="regForm.password2" type="password" placeholder="再次输入" maxlength="72">
         </div>
         <p class="err-text">{{ err }}</p>
         <button class="btn primary full" type="submit" :disabled="loading">{{ loading ? '提交中...' : '注 册' }}</button>

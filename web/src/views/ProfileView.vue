@@ -48,8 +48,8 @@ async function changePw() {
     <div class="card profile-card">
       <h3>🔑 修改密码</h3>
       <div class="field"><span>当前密码</span><input v-model="pw.old" type="password" autocomplete="current-password"></div>
-      <div class="field"><span>新密码（至少 8 位，含字母和数字）</span><input v-model="pw.next" type="password" autocomplete="new-password"></div>
-      <div class="field"><span>确认新密码</span><input v-model="pw.next2" type="password" autocomplete="new-password"></div>
+      <div class="field"><span>新密码（至少 8 位，含字母和数字）</span><input v-model="pw.next" type="password" autocomplete="new-password" maxlength="72"></div>
+      <div class="field"><span>确认新密码</span><input v-model="pw.next2" type="password" autocomplete="new-password" maxlength="72"></div>
       <button class="btn primary" :disabled="loading" @click="changePw">{{ loading ? '提交中...' : '修改密码' }}</button>
     </div>
   </AppShell>

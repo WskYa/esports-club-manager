@@ -110,18 +110,18 @@ onMounted(switchTab)
 
 // ---- 用户操作 ----
 async function activate(u) {
-  try { await api.activateUser(u.sid); toast('已激活'); loadUsers() } catch (e) { toast(e.message, 'err') }
+  try { await api.activateUser(u._id); toast('已激活'); loadUsers() } catch (e) { toast(e.message, 'err') }
 }
 async function setAdmin(u) {
-  try { await api.setUserRole(u.sid, 'admin'); toast('已设为管理员'); loadUsers() } catch (e) { toast(e.message, 'err') }
+  try { await api.setUserRole(u._id, 'admin'); toast('已设为管理员'); loadUsers() } catch (e) { toast(e.message, 'err') }
 }
 async function markGrad(u) {
   if (!confirm(`确定将 ${u.nickname} 标记为已毕业？`)) return
-  try { await api.setUserStatus(u.sid, '已毕业'); toast('已标记'); loadUsers() } catch (e) { toast(e.message, 'err') }
+  try { await api.setUserStatus(u._id, '已毕业'); toast('已标记'); loadUsers() } catch (e) { toast(e.message, 'err') }
 }
 async function delUser(u) {
   if (!confirm(`确定删除用户 ${u.nickname}（${u.sid}）？此操作不可恢复，将级联清理其战队与报名`)) return
-  try { await api.deleteUser(u.sid); toast('已删除'); loadUsers() } catch (e) { toast(e.message, 'err') }
+  try { await api.deleteUser(u._id); toast('已删除'); loadUsers() } catch (e) { toast(e.message, 'err') }
 }
 
 // ---- 审核操作 ----

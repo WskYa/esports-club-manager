@@ -117,7 +117,7 @@ try {
   const ul = await call('userList', { search: NEW_SID })
   const nu = (ul.users || []).find(u => u.sid === NEW_SID)
   check('管理员搜索到新用户', !!nu)
-  const act = await call('userActivate', { sid: NEW_SID })
+  const act = await call('userActivate', { uid: nu._id })
   check('管理员激活', act.ok, JSON.stringify(act))
   await logout()
 
@@ -138,7 +138,7 @@ try {
   check('新战队邀请码不暴露学号', myT && /^[A-Z0-9]{6}$/.test(myT.invite_code || ''))
   // 重复 pending 战队被拒
   const dup = await call('teamCreate', { name: '重复战队' })
-  check('重复待审核战队被拒', !dup.ok && dup.error.includes('待审核'))
+  check('重复创建战队被拒(一人一队)', !dup.ok)
   await logout()
 } catch (e) { failed++; console.log('  ❌ 注册/建队流程异常:', e.message) }
 
@@ -228,7 +228,7 @@ try {
     const ul = await call('userList', { search: NEW_SID })
     const nu = (ul.users || []).find(u => u.sid === NEW_SID)
     if (nu) {
-      const del = await call('userDelete', { sid: NEW_SID })
+      const del = await call('userDelete', { uid: nu._id })
       check('删除测试用户（级联清战队）', del.ok, JSON.stringify(del))
     }
     await logout()

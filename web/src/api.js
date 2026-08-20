@@ -30,10 +30,10 @@ export const api = {
   stats: () => call('stats'),
   // 用户
   users: (page = 1, pageSize = 20, search = '') => call('userList', { page, pageSize, search }),
-  activateUser: (sid) => call('userActivate', { sid }),
-  setUserRole: (sid, role) => call('userSetRole', { sid, role }),
-  setUserStatus: (sid, status) => call('userSetStatus', { sid, status }),
-  deleteUser: (sid) => call('userDelete', { sid }),
+  activateUser: (uid) => call('userActivate', { uid }),
+  setUserRole: (uid, role) => call('userSetRole', { uid, role }),
+  setUserStatus: (uid, status) => call('userSetStatus', { uid, status }),
+  deleteUser: (uid) => call('userDelete', { uid }),
   // 战队
   teams: () => call('teamList'),
   createTeam: (data) => call('teamCreate', data),
@@ -52,6 +52,8 @@ export const api = {
   createTournament: (data) => call('tournamentCreate', data),
   registerTournament: (tournamentId) => call('registrationCreate', { tournamentId }),
   adminRegistrations: () => call('registrationList'),
+  approveTeam: (id) => call('adminTeamApprove', { id }),
+  rejectTeam: (id) => call('adminTeamReject', { id }),
   approveReg: (rid) => call('registrationApprove', { rid }),
   rejectReg: (rid) => call('registrationDelete', { rid }),
   // 对阵

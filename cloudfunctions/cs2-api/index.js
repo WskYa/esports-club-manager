@@ -118,10 +118,11 @@ async function uniqueInviteCode() {
   throw new Error("生成邀请码失败");
 }
 
-// 校验规则
+// 校验规则（密码最长 72 字符，防超长字符串触发 scrypt CPU 消耗）
 const RE_SID = /^\d{10,12}$/;
 const RE_NAME = /^[\u4e00-\u9fa5]{2,10}$/;
 const RE_QQ = /^\d{5,12}$/;
+const RE_PW = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/;
 
 // 图片（data URL）白名单：仅常见位图格式，拒绝 SVG 等可执行内容；长度限制防文档超限
 const MAX_LOGO_LEN = 700000;
@@ -152,11 +153,21 @@ function createLoginTicket(sid) {
 
 function isGuest(u) { return !u; }
 
-// 业务写操作要求：已登录且已激活（未激活用户即使拿到 ticket 也不能操作业务）
+// 业务写操作要求：已登录且已激活且未毕业（未激活用户即使拿到 ticket 也不能操作业务）
 function requireActive(u) {
   if (isGuest(u)) return "游客不可操作";
   if (u.activated !== 1) return "账号未激活，请等待管理员激活";
+  if (u.status === "已毕业") return "已毕业用户不可操作";
   return null;
+}
+
+// 用户是否已属于某个战队（成员或队长；一人一队规则）
+async function inAnyTeam(uid) {
+  if (!uid) return null;
+  const asMember = await list("teams", { members: uid });
+  if (asMember.length) return asMember[0];
+  const asCaptain = await list("teams", { captain_sid: uid });
+  return asCaptain.length ? asCaptain[0] : null;
 }
 
 // 剔除敏感字段（password_hash / password_salt）后返回用户
@@ -180,7 +191,7 @@ async function actionRegister(event) {
   if (!college) return fail("请选择学院");
   if (typeof nickname !== "string" || nickname.length < 2 || nickname.length > 16) return fail("昵称须为2-16字符");
   if (!RE_QQ.test(qq)) return fail("QQ号格式不正确");
-  if (typeof password !== "string" || !/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password)) return fail("密码至少8位，含字母和数字");
+  if (typeof password !== "string" || !RE_PW.test(password)) return fail("密码须为8-72位，含字母和数字");
   const dup = await list("users", { sid });
   if (dup.length) return fail("该学号已被注册");
   const wl = await getDoc("whitelist_config", "1");
@@ -205,6 +216,7 @@ async function actionLoginVerify(event) {
   const sid = String(event.sid || "").trim();
   const password = String(event.password || "");
   if (!RE_SID.test(sid) || !password) return fail("学号或密码错误");
+  if (password.length > 72) return fail("学号或密码错误"); // 超长密码直接拒绝，防 scrypt CPU 消耗
   const users = await list("users", { sid });
   const u = users[0];
   if (!u) return fail("学号或密码错误");
@@ -234,7 +246,7 @@ async function actionChangePassword(event) {
   if (!u.password_hash) return fail("该账号由平台管理，不支持此方式修改密码");
   const { oldPassword, newPassword } = event;
   if (!verifyPassword(oldPassword || "", u.password_hash, u.password_salt)) return fail("当前密码不正确");
-  if (typeof newPassword !== "string" || !/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(newPassword)) return fail("新密码至少8位，含字母和数字");
+  if (typeof newPassword !== "string" || !RE_PW.test(newPassword)) return fail("新密码须为8-72位，含字母和数字");
   const salt = crypto.randomBytes(16).toString("hex");
   await db.collection("users").doc(u._id).update({
     password_hash: hashPassword(newPassword, salt), password_salt: salt
@@ -297,68 +309,73 @@ async function actionUserList(event) {
 async function actionUserActivate(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
-  const t = await getDoc("users", event.sid);
+  const t = await getDoc("users", event.uid);
   if (!t) return fail("用户不存在");
-  await db.collection("users").doc(event.sid).update({ activated: 1 });
-  await logAction(u.sid, u.nickname, "activate_user", event.sid, "");
-  await notify(event.sid, "account", "账号已激活", "管理员已激活你的账号，现在可以正常使用了。");
+  await db.collection("users").doc(event.uid).update({ activated: 1 });
+  await logAction(u.sid, u.nickname, "activate_user", t.sid, "");
+  await notify(event.uid, "account", "账号已激活", "管理员已激活你的账号，现在可以正常使用了。");
   return ok();
 }
 
 async function actionUserSetRole(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
-  if (event.sid === u._id) return fail("不能修改自己");
-  const t = await getDoc("users", event.sid);
+  if (event.uid === u._id) return fail("不能修改自己");
+  const t = await getDoc("users", event.uid);
   if (!t) return fail("用户不存在");
   const role = event.role;
   if (!["member", "captain", "admin"].includes(role)) return fail("无效角色");
-  await db.collection("users").doc(event.sid).update({ role });
-  await logAction(u.sid, u.nickname, "change_role", event.sid, role);
+  await db.collection("users").doc(event.uid).update({ role });
+  await logAction(u.sid, u.nickname, "change_role", t.sid, role);
   return ok();
 }
 
 async function actionUserSetStatus(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
-  if (event.sid === u._id) return fail("不能修改自己");
-  const t = await getDoc("users", event.sid);
+  if (event.uid === u._id) return fail("不能修改自己");
+  const t = await getDoc("users", event.uid);
   if (!t) return fail("用户不存在");
-  await db.collection("users").doc(event.sid).update({ status: event.status || "在校" });
-  await logAction(u.sid, u.nickname, "change_status", event.sid, event.status || "在校");
+  await db.collection("users").doc(event.uid).update({ status: event.status || "在校" });
+  await logAction(u.sid, u.nickname, "change_status", t.sid, event.status || "在校");
   return ok();
 }
 
 async function actionUserDelete(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
-  if (event.sid === u._id) return fail("不能删除自己");
-  const t = await getDoc("users", event.sid);
+  if (event.uid === u._id) return fail("不能删除自己");
+  const t = await getDoc("users", event.uid);
   if (!t) return fail("用户不存在");
+  const uid = event.uid;
   // 级联清理：入队申请、通知
-  await db.collection("join_requests").where({ sid: event.sid }).remove().catch(() => {});
-  await db.collection("notifications").where({ to_sid: event.sid }).remove().catch(() => {});
+  await db.collection("join_requests").where({ sid: uid }).remove().catch(() => {});
+  await db.collection("notifications").where({ to_sid: uid }).remove().catch(() => {});
   // 从所有战队成员中移除
   const allTeams = await list("teams");
   for (const team of allTeams) {
-    if (team.members && team.members.includes(event.sid)) {
-      await db.collection("teams").doc(team._id).update({ members: _.pull(event.sid) });
+    if (team.members && team.members.includes(uid)) {
+      await db.collection("teams").doc(team._id).update({ members: _.pull(uid) });
     }
-    // 若被删用户是该队队长 → 级联删除战队及其报名
-    if (team.captain_sid === event.sid) {
-      await db.collection("teams").doc(team._id).remove().catch(() => {});
+    // 若被删用户是该队队长 → 级联删除战队及关联数据
+    if (team.captain_sid === uid) {
+      await db.collection("matches").where({ team_a_id: team._id }).remove().catch(() => {});
+      await db.collection("matches").where({ team_b_id: team._id }).remove().catch(() => {});
+      await db.collection("challenges").where({ from_team_id: team._id }).remove().catch(() => {});
+      await db.collection("challenges").where({ to_team_id: team._id }).remove().catch(() => {});
       await db.collection("registrations").where({ team_id: team._id }).remove().catch(() => {});
+      await db.collection("teams").doc(team._id).remove().catch(() => {});
     }
   }
   // 从活动报名中移除
   const acts = await list("activities");
   for (const a of acts) {
-    if (a.participants && a.participants.includes(event.sid)) {
-      await db.collection("activities").doc(a._id).update({ participants: _.pull(event.sid) });
+    if (a.participants && a.participants.includes(uid)) {
+      await db.collection("activities").doc(a._id).update({ participants: _.pull(uid) });
     }
   }
-  await db.collection("users").doc(event.sid).remove().catch(() => {});
-  await logAction(u.sid, u.nickname, "delete_user", event.sid, "");
+  await db.collection("users").doc(uid).remove().catch(() => {});
+  await logAction(u.sid, u.nickname, "delete_user", t.sid, "");
   return ok();
 }
 
@@ -392,8 +409,8 @@ async function actionTeamCreate(event) {
   const denied = requireActive(u); if (denied) return fail(denied);
   const name = String(event.name || "").trim();
   if (name.length < 2 || name.length > 16) return fail("战队名称须为2-16字");
-  const pending = await list("teams", { captain_sid: u._id, status: "pending" });
-  if (pending.length) return fail("你已有待审核的战队申请");
+  const existing = await inAnyTeam(u._id);
+  if (existing) return fail("你已属于战队「" + existing.name + "」，一人只能加入一个战队");
   const code = await uniqueInviteCode();
   if (!validLogo(event.logo)) return fail("队徽格式不支持或文件过大");
   const id = "t" + Date.now() + Math.floor(Math.random() * 1000);
@@ -446,6 +463,8 @@ async function actionTeamJoin(event) {
   if (!found.length) return fail("未找到对应战队，请核对邀请码");
   const t = found[0];
   if (t.captain_sid === u._id || (t.members || []).includes(u._id)) return fail("你已在该战队中");
+  const existing = await inAnyTeam(u._id);
+  if (existing) return fail("你已属于战队「" + existing.name + "」，一人只能加入一个战队");
   const active = (await usersByIds(t.members || [])).filter(m => m.status !== "已毕业").length;
   if (active >= TEAM_LIMIT) return fail("人数已达上限");
   const dup = await list("join_requests", { team_id: t._id, sid: u._id, status: _.in(["pending", "pending_captain"]) });
@@ -466,6 +485,8 @@ async function actionTeamApply(event) {
   if (!t) return fail("战队不存在");
   if (!t.recruiting) return fail("未在招募");
   if (t.captain_sid === u._id || (t.members || []).includes(u._id)) return fail("你已在该战队中");
+  const existing = await inAnyTeam(u._id);
+  if (existing) return fail("你已属于战队「" + existing.name + "」，一人只能加入一个战队");
   const dup = await list("join_requests", { team_id: t._id, sid: u._id, status: _.in(["pending", "pending_captain"]) });
   if (dup.length) return fail("你已提交申请，等待审核");
   const jid = "jr" + Date.now() + Math.floor(Math.random() * 1000);
@@ -481,7 +502,7 @@ async function actionTeamJoinRequests(event) {
   if (isGuest(u)) return fail("请先登录");
   const t = await getDoc("teams", event.id);
   if (!t) return fail("战队不存在");
-  if (t.captain_sid !== u._id) return fail("仅队长可查看");
+  if (t.captain_sid !== u._id && u.role !== "admin") return fail("仅队长或管理员可查看");
   const reqs = await list("join_requests", { team_id: t._id }, "created_at", "desc");
   const users = await usersByIds(reqs.map(r => r.sid));
   const umap = {};
@@ -495,7 +516,7 @@ async function actionTeamApproveJoin(event) {
   const j = await getDoc("join_requests", event.jid);
   if (!j) return fail("申请不存在");
   const t = await getDoc("teams", j.team_id);
-  if (!t || t.captain_sid !== u._id) return fail("仅队长可审核");
+  if (!t || (t.captain_sid !== u._id && u.role !== "admin")) return fail("仅队长或管理员可审核");
   const active = (await usersByIds(t.members || [])).filter(m => m.status !== "已毕业").length;
   if (active >= TEAM_LIMIT) return fail("人数已达上限");
   const members = t.members || [];
@@ -512,7 +533,7 @@ async function actionTeamRejectJoin(event) {
   const j = await getDoc("join_requests", event.jid);
   if (!j) return fail("申请不存在");
   const t = await getDoc("teams", j.team_id);
-  if (!t || t.captain_sid !== u._id) return fail("仅队长可审核");
+  if (!t || (t.captain_sid !== u._id && u.role !== "admin")) return fail("仅队长或管理员可审核");
   await db.collection("join_requests").doc(j._id).remove().catch(() => {});
   await notify(j.sid, "team", "入队申请被拒绝", "你加入「" + t.name + "」的申请被队长拒绝");
   return ok();
@@ -544,6 +565,9 @@ async function actionTeamTransfer(event) {
   const t = await getDoc("teams", event.id);
   if (!t || t.captain_sid !== u._id) return fail("仅队长可操作");
   if (!(t.members || []).includes(event.sid)) return fail("该用户不在战队中");
+  // 被转让者不能在别的战队（一人一队）
+  const targetTeam = await inAnyTeam(event.sid);
+  if (targetTeam && targetTeam._id !== t._id) return fail("该用户已在其他战队「" + targetTeam.name + "」中");
   await db.collection("teams").doc(t._id).update({ captain_sid: event.sid });
   // 角色调整：新队长升 captain（保留 admin），旧队长降 member
   const old = await getDoc("users", u._id);
@@ -559,6 +583,7 @@ async function actionAdminTeamApprove(event) {
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
   const t = await getDoc("teams", event.id);
   if (!t) return fail("战队不存在");
+  if (t.status !== "pending") return fail("仅待审核战队可操作");
   await db.collection("teams").doc(t._id).update({ status: "approved" });
   const cap = await getDoc("users", t.captain_sid);
   if (cap && cap.role !== "admin") await db.collection("users").doc(t.captain_sid).update({ role: "captain" });
@@ -567,13 +592,31 @@ async function actionAdminTeamApprove(event) {
   return ok();
 }
 
+// 管理员拒绝战队（置 rejected 状态，队长可重新提交）
+async function actionAdminTeamReject(event) {
+  const u = await getCaller();
+  if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
+  const t = await getDoc("teams", event.id);
+  if (!t) return fail("战队不存在");
+  if (t.status !== "pending") return fail("仅待审核战队可操作");
+  await db.collection("teams").doc(t._id).update({ status: "rejected" });
+  await logAction(u.sid, u.nickname, "reject_team", t._id, t.name);
+  await notify(t.captain_sid, "team", "战队申请被拒绝", "你的战队「" + t.name + "」未通过审核，可修改后重新提交");
+  return ok();
+}
+
 async function actionAdminTeamDelete(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
   const t = await getDoc("teams", event.id);
   if (!t) return fail("战队不存在");
+  // 级联清理：申请、报名、对阵、约战
   await db.collection("join_requests").where({ team_id: t._id }).remove().catch(() => {});
   await db.collection("registrations").where({ team_id: t._id }).remove().catch(() => {});
+  await db.collection("matches").where({ team_a_id: t._id }).remove().catch(() => {});
+  await db.collection("matches").where({ team_b_id: t._id }).remove().catch(() => {});
+  await db.collection("challenges").where({ from_team_id: t._id }).remove().catch(() => {});
+  await db.collection("challenges").where({ to_team_id: t._id }).remove().catch(() => {});
   await db.collection("teams").doc(t._id).remove().catch(() => {});
   await logAction(u.sid, u.nickname, "delete_team", t._id, t.name);
   await notify(t.captain_sid, "team", "战队被删除", "你的战队「" + t.name + "」已被管理员删除");
@@ -651,6 +694,7 @@ async function actionRegistrationApprove(event) {
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
   const r = await getDoc("registrations", event.rid);
   if (!r) return fail("报名不存在");
+  if (r.status !== "pending") return fail("仅待审核的报名可操作");
   await db.collection("registrations").doc(r._id).update({ status: "approved" });
   await notify(r.captain_sid, "tournament", "赛事报名已通过", "「" + r.team_name + "」报名赛事已通过审核");
   return ok();
@@ -661,6 +705,7 @@ async function actionRegistrationDelete(event) {
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
   const r = await getDoc("registrations", event.rid);
   if (!r) return fail("报名不存在");
+  if (r.status !== "pending") return fail("仅待审核的报名可操作");
   await db.collection("registrations").doc(r._id).remove().catch(() => {});
   await notify(r.captain_sid, "tournament", "赛事报名被拒绝", "「" + r.team_name + "」的赛事报名已被管理员拒绝");
   return ok();
@@ -687,6 +732,8 @@ async function actionMatchCreate(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
   if (!event.tournamentId) return fail("缺少赛事");
+  const tour = await getDoc("tournaments", event.tournamentId);
+  if (!tour) return fail("赛事不存在");
   if (!event.teamAId && !event.teamBId) return fail("请选择对阵双方");
   // 校验参赛战队存在且已通过审核
   const teamIds = [event.teamAId, event.teamBId].filter(Boolean);
@@ -751,7 +798,15 @@ async function actionChallengeList() {
   const u = await getCaller();
   if (isGuest(u)) return fail("请先登录");
   await expireChallenges();
-  const chs = await list("challenges", null, "created_at", "desc");
+  // 仅返回与当前用户战队相关的约战（管理员可见全部）
+  let cond = null;
+  if (u.role !== "admin") {
+    const myTeams = await list("teams", { members: u._id });
+    const ids = myTeams.map(t => t._id);
+    if (ids.length) cond = _.or([{ from_team_id: _.in(ids) }, { to_team_id: _.in(ids) }]);
+    else return ok({ challenges: [] });
+  }
+  const chs = await list("challenges", cond, "created_at", "desc");
   return ok({ challenges: chs.map(c => ({
     id: c._id, from_team_id: c.from_team_id, to_team_id: c.to_team_id,
     from_team_name: c.from_team_name, to_team_name: c.to_team_name,
@@ -1077,7 +1132,7 @@ async function actionWhitelistToggle() {
 async function actionActivityLog(event) {
   const u = await getCaller();
   if (isGuest(u) || u.role !== "admin") return fail("仅管理员");
-  const limit = Math.min(parseInt(event.limit) || 200, 1000);
+  const limit = Math.min(Math.max(parseInt(event.limit) || 200, 1), 1000);
   const logs = await list("activity_log", null, "created_at", "desc", limit);
   return ok({ logs });
 }
@@ -1087,7 +1142,7 @@ async function actionActivityLog(event) {
 async function actionNotificationList(event) {
   const uid = callerUid();
   if (!uid) return fail("请先登录");
-  const limit = Math.min(parseInt(event.limit) || 50, 100);
+  const limit = Math.min(Math.max(parseInt(event.limit) || 50, 1), 100);
   const n = await list("notifications", { to_sid: uid }, "created_at", "desc", limit);
   return ok({ notifications: n });
 }
@@ -1155,6 +1210,7 @@ exports.main = async (event) => {
       case "teamLeave": return await actionTeamLeave(event);
       case "teamTransfer": return await actionTeamTransfer(event);
       case "adminTeamApprove": return await actionAdminTeamApprove(event);
+      case "adminTeamReject": return await actionAdminTeamReject(event);
       case "adminTeamDelete": return await actionAdminTeamDelete(event);
       // 赛事
       case "tournamentList": return await actionTournamentList();
