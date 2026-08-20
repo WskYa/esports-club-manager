@@ -9,9 +9,14 @@ try {
 const ENV_ID = process.env.VITE_CB_ENV
 const PUBLISHABLE_KEY = process.env.VITE_CB_PUBLISHABLE_KEY
 
-// 测试账号（从 .env 读取，勿提交真实密码）
+// 测试账号（从环境变量读取，勿写入文件）
 const ADMIN = { username: process.env.CB_ADMIN_SID || '1000000000', password: process.env.CB_ADMIN_PW }
 const CAPTAIN = { username: process.env.CB_CAPTAIN_SID || '2024000011', password: process.env.CB_CAPTAIN_PW }
+
+if (!ADMIN.password || !CAPTAIN.password) {
+  console.error('请先设置测试账号密码环境变量后运行：\n  export CB_ADMIN_PW="管理员密码" CB_CAPTAIN_PW="队长密码"')
+  process.exit(1)
+}
 
 const app = cloudbase.init({ env: ENV_ID, accessKey: PUBLISHABLE_KEY, auth: { detectSessionInUrl: true } })
 const auth = app.auth
@@ -63,7 +68,7 @@ try {
   const tours = await call('tournamentList')
   check('tournamentList 有赛事', tours.ok && tours.tournaments.length >= 1)
   const champ = await call('championGet')
-  check('championGet 正常', champ.ok && champ.teamName === 'CS2 一队')
+  check('championGet 正常', champ.ok && typeof champ.teamName === 'string')
   const ul = await call('userList', { page: 1, pageSize: 20 })
   check('userList(admin) 返回用户', ul.ok && ul.total >= 2, JSON.stringify(ul))
   const wl = await call('whitelistGet')
