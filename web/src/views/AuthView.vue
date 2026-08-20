@@ -70,7 +70,7 @@ async function guestLogin() {
   <div class="auth-wrap">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="logo">🎯</div>
+        <img class="logo" src="/logo.jpg" alt="HAU CS2">
         <h1>HAU CS2</h1>
         <p>淮安大学 CS2 电竞社团 · 内部管理系统</p>
       </div>

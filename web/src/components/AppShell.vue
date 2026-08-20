@@ -46,7 +46,7 @@ async function logout() {
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-logo">🎯</div>
+        <img class="brand-logo" src="/logo.jpg" alt="HAU CS2">
         <div>
           <div class="brand-name">HAU CS2</div>
           <div class="brand-sub">电竞社团管理系统</div>
