@@ -5,6 +5,7 @@ import Modal from '../components/Modal.vue'
 import { api } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../toast'
+import { checkImage, fileToDataUrl } from '../utils'
 
 const store = useAuthStore()
 const teams = ref([])
@@ -89,9 +90,9 @@ async function createTeam() {
   try {
     let logo = ''
     if (file) {
-      if (!file.type.startsWith('image/')) { toast('仅支持图片文件', 'err'); return }
-      if (file.size > 2 * 1024 * 1024) { toast('图片最大 2MB', 'err'); return }
-      logo = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.readAsDataURL(file) })
+      const chk = checkImage(file)
+      if (!chk.ok) { toast(chk.error, 'err'); return }
+      logo = await fileToDataUrl(file)
     }
     const r = await api.createTeam({ name, shortName: short || '', logo })
     toast('已提交审核，请等待管理员通过')
@@ -113,14 +114,12 @@ async function applyTeam(t) {
   try { await api.applyTeam(t.id); toast('申请已提交'); load() } catch (e) { toast(e.message, 'err') }
 }
 
-function readLogo(e) {
+async function readLogo(e) {
   const f = e.target.files[0]
   if (!f) return
-  if (!f.type.startsWith('image/')) { toast('仅支持图片', 'err'); return }
-  if (f.size > 2 * 1024 * 1024) { toast('图片最大 2MB', 'err'); return }
-  const rd = new FileReader()
-  rd.onload = () => { newLogo.value = rd.result }
-  rd.readAsDataURL(f)
+  const chk = checkImage(f)
+  if (!chk.ok) { toast(chk.error, 'err'); return }
+  newLogo.value = await fileToDataUrl(f)
 }
 
 function teamCard(t) {
@@ -142,7 +141,7 @@ function teamCard(t) {
         <h3>创建战队</h3>
         <div class="field"><span>战队名称</span><input id="team-name" maxlength="16" placeholder="2-16 字"></div>
         <div class="field"><span>简称</span><input id="team-short" maxlength="8" placeholder="选填，如：一队"></div>
-        <div class="field"><span>队徽</span><input id="team-logo-file" type="file" accept="image/*"></div>
+        <div class="field"><span>队徽</span><input id="team-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>
         <button v-if="!store.guest" class="btn primary full" @click="createTeam">提交审核</button>
         <button v-else class="btn full" disabled>游客不可操作</button>
       </div>
@@ -215,7 +214,7 @@ function teamCard(t) {
       <div class="field"><span>简称</span><input v-model="editForm.shortName" maxlength="8"></div>
       <div class="field">
         <span>队徽</span>
-        <input type="file" accept="image/*" @change="readLogo">
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="readLogo">
         <span v-if="newLogo" style="font-size:11px;color:var(--ok)">已选择新队徽</span>
       </div>
       <div class="modal-foot">

@@ -123,6 +123,15 @@ const RE_SID = /^\d{10,12}$/;
 const RE_NAME = /^[\u4e00-\u9fa5]{2,10}$/;
 const RE_QQ = /^\d{5,12}$/;
 
+// 图片（data URL）白名单：仅常见位图格式，拒绝 SVG 等可执行内容；长度限制防文档超限
+const MAX_LOGO_LEN = 700000;
+function validLogo(logo) {
+  if (logo === undefined || logo === null || logo === "") return true;
+  return typeof logo === "string"
+    && logo.length <= MAX_LOGO_LEN
+    && /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(logo.slice(0, 40));
+}
+
 // ---------- 密码哈希（scrypt）与登录保护 ----------
 const SCRYPT_N = 16384;
 function hashPassword(password, salt) {
@@ -367,9 +376,10 @@ async function actionTeamCreate(event) {
   const pending = await list("teams", { captain_sid: u._id, status: "pending" });
   if (pending.length) return fail("你已有待审核的战队申请");
   const code = await uniqueInviteCode();
+  if (!validLogo(event.logo)) return fail("队徽格式不支持或文件过大");
   const id = "t" + Date.now() + Math.floor(Math.random() * 1000);
   await db.collection("teams").doc(id).set({
-    name, short_name: String(event.shortName || "").slice(0, 8), logo: String(event.logo || "").slice(0, 5000),
+    name, short_name: String(event.shortName || "").slice(0, 8), logo: event.logo || "",
     captain_sid: u._id, status: "pending", recruiting: 0,
     invite_code: code, members: [u._id], created_at: now()
   });
@@ -387,7 +397,10 @@ async function actionTeamUpdate(event) {
   if (name.length < 2 || name.length > 16) return fail("战队名称须为2-16字");
   const patch = { name };
   if (event.shortName !== undefined) patch.short_name = String(event.shortName).slice(0, 8);
-  if (event.logo !== undefined) patch.logo = String(event.logo).slice(0, 5000);
+  if (event.logo !== undefined) {
+    if (!validLogo(event.logo)) return fail("队徽格式不支持或文件过大");
+    patch.logo = event.logo;
+  }
   await db.collection("teams").doc(t._id).update(patch);
   await logAction(u.sid, u.nickname, "edit_team", t._id, name);
   return ok();
@@ -551,11 +564,21 @@ async function actionAdminTeamDelete(event) {
 // ================= 赛事 =================
 
 async function actionTournamentList() {
+  const u = await getCaller();
   const tours = await list("tournaments", null, "created_at", "desc");
-  return ok({ tournaments: tours.map(t => ({
+  // 当前用户已通过战队的报名状态（前端展示"已报名/审核中"用）
+  let regMap = {};
+  if (u) {
+    const myTeam = await list("teams", { captain_sid: u._id, status: "approved" });
+    if (myTeam.length) {
+      const regs = await list("registrations", { team_id: myTeam[0]._id });
+      regs.forEach(r => { regMap[r.tournament_id] = r.status; });
+    }
+  }
+  return ok({ tournaments: tours.map(t => Object.assign({
     id: t._id, name: t.name, intro: t.intro || "", date: t.date || "",
     status: t.status || "报名中", created_at: t.created_at
-  })) });
+  }, { myStatus: regMap[t._id] || "" })) });
 }
 
 async function actionTournamentCreate(event) {
@@ -591,6 +614,7 @@ async function actionRegistrationCreate(event) {
   const t = myTeam[0];
   const tour = await getDoc("tournaments", event.tournamentId);
   if (!tour) return fail("赛事不存在");
+  if (tour.status !== "报名中") return fail("该赛事当前不可报名");
   const dup = await list("registrations", { tournament_id: tour._id, team_id: t._id });
   if (dup.length) return fail("该战队已报名");
   const id = "rg" + Date.now() + Math.floor(Math.random() * 1000);
@@ -962,11 +986,11 @@ async function actionChampionGet() {
 
 async function actionChampionUpdate(event) {
   const u = await getCaller();
-  if (isGuest(u)) return fail("游客不可操作");
+  if (isGuest(u) || u.role !== "admin") return fail("仅管理员可编辑冠军墙");
   await db.collection("champion").doc("1").set({
     team_name: String(event.teamName || "").slice(0, 16),
     season: String(event.season || "").slice(0, 20),
-    logo: String(event.logo || "").slice(0, 5000),
+    logo: validLogo(event.logo) ? event.logo : "",
     members: Array.isArray(event.members) ? event.members.slice(0, 20).map(m => String(m).slice(0, 16)) : []
   });
   await logAction(u.sid, u.nickname, "update_champion", String(event.teamName || ""), "");
@@ -1053,6 +1077,17 @@ async function actionNotificationMarkRead(event) {
   return ok();
 }
 
+// 清除已读通知（仅删除当前用户已读的）
+async function actionNotificationClearRead() {
+  const uid = callerUid();
+  if (!uid) return fail("请先登录");
+  const read = await list("notifications", { to_sid: uid, read: 1 });
+  for (const n of read) {
+    await db.collection("notifications").doc(n._id).remove().catch(() => {});
+  }
+  return ok({ cleared: read.length });
+}
+
 // ================= 入口 =================
 
 exports.main = async (event) => {
@@ -1134,6 +1169,7 @@ exports.main = async (event) => {
       case "notificationList": return await actionNotificationList(event);
       case "notificationUnreadCount": return await actionNotificationUnreadCount();
       case "notificationMarkRead": return await actionNotificationMarkRead(event);
+      case "notificationClearRead": return await actionNotificationClearRead();
       default: return fail("未知操作: " + action);
     }
   } catch (e) {

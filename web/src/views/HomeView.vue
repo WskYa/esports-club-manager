@@ -5,6 +5,7 @@ import Modal from '../components/Modal.vue'
 import { api } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../toast'
+import { checkImage, fileToDataUrl } from '../utils'
 
 const store = useAuthStore()
 const stats = ref({ userCount: 0, teamCount: 0 })
@@ -62,18 +63,20 @@ async function saveChamp() {
 async function onPickLogo(e) {
   const f = e.target.files[0]
   if (!f) return
-  if (!f.type.startsWith('image/')) { toast('仅支持图片', 'err'); return }
-  if (f.size > 2 * 1024 * 1024) { toast('图片最大 2MB', 'err'); return }
-  const rd = new FileReader()
-  rd.onload = async () => {
-    try {
-      await api.updateChampion({ ...editForm.value, logo: rd.result })
-      toast('图标已更新，保存后生效')
-      showEdit.value = false
-      load()
-    } catch (err) { toast(err.message, 'err') }
-  }
-  rd.readAsDataURL(f)
+  const chk = checkImage(f)
+  if (!chk.ok) { toast(chk.error, 'err'); return }
+  try {
+    const logo = await fileToDataUrl(f)
+    await api.updateChampion({
+      teamName: editForm.value.teamName.trim(),
+      season: editForm.value.season.trim(),
+      logo,
+      members: editForm.value.members.filter(Boolean)
+    })
+    toast('图标已更新')
+    showEdit.value = false
+    load()
+  } catch (err) { toast(err.message, 'err') }
 }
 </script>
 
@@ -91,7 +94,7 @@ async function onPickLogo(e) {
     <div class="card">
       <div class="card-title-row">
         <h3>🏆 冠军战队</h3>
-        <button v-if="store.isLoggedIn" class="btn sm" @click="openEdit">编辑</button>
+        <button v-if="store.isAdmin" class="btn sm" @click="openEdit">编辑</button>
       </div>
       <div class="champ-box">
         <div class="champ-logo">
@@ -141,8 +144,8 @@ async function onPickLogo(e) {
         <button class="btn ghost" @click="showEdit = false">取消</button>
         <button class="btn primary" @click="saveChamp">保存</button>
       </div>
-      <input type="file" accept="image/*" style="display:none" id="champ-logo-input" @change="onPickLogo">
-      <button class="btn sm" style="margin-top:4px" @click="$refs && document.getElementById('champ-logo-input').click()">更换队徽</button>
+      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" id="champ-logo-input" @change="onPickLogo">
+      <button class="btn sm" style="margin-top:4px" @click="document.getElementById('champ-logo-input').click()">更换队徽</button>
     </Modal>
   </AppShell>
 </template>

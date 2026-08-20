@@ -93,5 +93,6 @@ export const api = {
   activityLog: (limit = 200) => call('activityLog', { limit }),
   notifications: (limit = 50) => call('notificationList', { limit }),
   unreadCount: () => call('notificationUnreadCount'),
-  markNotificationsRead: (id) => call('notificationMarkRead', { id })
+  markNotificationsRead: (id) => call('notificationMarkRead', { id }),
+  clearNotifications: () => call('notificationClearRead')
 }

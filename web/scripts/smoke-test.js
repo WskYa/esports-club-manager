@@ -1,13 +1,21 @@
 // 全链路冒烟测试：模拟真实用户流程（Node + @cloudbase/js-sdk）
-// 用法：node scripts/smoke-test.js
+// 用法：node scripts/smoke-test.js（从 web/.env 读取环境配置）
 import cloudbase from '@cloudbase/js-sdk'
-import { ENV_ID, PUBLISHABLE_KEY } from '../src/cloudbase.js'
+
+try {
+  process.loadEnvFile(new URL('../.env', import.meta.url))
+} catch (e) { console.error('未找到 web/.env，请先复制 .env.example 并填写配置'); process.exit(1) }
+
+const ENV_ID = process.env.VITE_CB_ENV
+const PUBLISHABLE_KEY = process.env.VITE_CB_PUBLISHABLE_KEY
+
+// 测试账号（从 .env 读取，勿提交真实密码）
+const ADMIN = { username: process.env.CB_ADMIN_SID || '1000000000', password: process.env.CB_ADMIN_PW }
+const CAPTAIN = { username: process.env.CB_CAPTAIN_SID || '2024000011', password: process.env.CB_CAPTAIN_PW }
 
 const app = cloudbase.init({ env: ENV_ID, accessKey: PUBLISHABLE_KEY, auth: { detectSessionInUrl: true } })
 const auth = app.auth
 
-const ADMIN = { username: '1000000000', password: 'Admin123456' }
-const CAPTAIN = { username: '2024000011', password: 'Demo12345' }
 const NEW_SID = '2024999999'
 const NEW_PW = 'Test12345a'
 

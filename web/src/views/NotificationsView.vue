@@ -39,6 +39,17 @@ async function markAll() {
     store.refreshUnread()
   } catch (e) { toast(e.message, 'err') }
 }
+async function clearRead() {
+  const hasRead = items.value.some(n => n.read)
+  if (!hasRead) { toast('没有已读通知', 'err'); return }
+  if (!confirm('确定清除所有已读通知？')) return
+  try {
+    await api.clearNotifications()
+    items.value = items.value.filter(n => !n.read)
+    store.refreshUnread()
+    toast('已清除')
+  } catch (e) { toast(e.message, 'err') }
+}
 </script>
 
 <template>
@@ -48,7 +59,10 @@ async function markAll() {
         <h1 class="page-title" style="margin-bottom:0">通知</h1>
         <p class="page-desc" style="margin-bottom:0;margin-top:4px">入队申请、约战与活动相关消息</p>
       </div>
-      <button class="btn sm" @click="markAll">全部已读</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm" @click="markAll">全部已读</button>
+        <button class="btn sm ghost" @click="clearRead">清除已读</button>
+      </div>
     </div>
 
     <div v-if="items.length">
