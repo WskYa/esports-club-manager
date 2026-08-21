@@ -172,7 +172,7 @@ function teamCard(t) {
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <template v-if="teamCard(t).isCap">
-              <button class="btn sm" :class="{ danger: t.recruiting }" @click="toggleRecruit(t)">{{ t.recruiting ? '关闭招募' : '开启招募' }}</button>
+              <button v-if="t.status === 'approved'" class="btn sm" :class="{ danger: t.recruiting }" @click="toggleRecruit(t)">{{ t.recruiting ? '关闭招募' : '开启招募' }}</button>
               <button class="btn sm" @click="openEdit(t)">编辑</button>
             </template>
             <button class="btn sm" @click="openView(t)">管理成员</button>

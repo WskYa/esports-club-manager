@@ -448,6 +448,7 @@ async function actionTeamToggleRecruit(event) {
   const t = await getDoc("teams", event.id);
   if (!t) return fail("战队不存在");
   if (t.captain_sid !== u._id) return fail("仅队长可操作");
+  if (t.status !== "approved") return fail("战队通过审核后才能开启招募");
   const nv = t.recruiting ? 0 : 1;
   await db.collection("teams").doc(t._id).update({ recruiting: nv });
   return ok({ recruiting: !!nv });
