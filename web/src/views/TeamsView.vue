@@ -20,8 +20,9 @@ const newLogo = ref('')
 const myTeams = computed(() => teams.value.filter(t =>
   t.captain_sid === store.user?.uid || (t.members || []).includes(store.user?.uid)))
 const myIds = computed(() => new Set(myTeams.value.map(t => t.id)))
+// 招募中：显示所有招募中的战队（含自己的，便于确认招募已生效）
 const recruiting = computed(() => teams.value.filter(t =>
-  t.status === 'approved' && t.recruiting && !myIds.value.has(t.id)))
+  t.status === 'approved' && t.recruiting))
 const approved = computed(() => teams.value.filter(t =>
   t.status === 'approved' && !myIds.value.has(t.id)))
 
@@ -188,9 +189,11 @@ function teamCard(t) {
         <div class="team-head">
           <div class="team-logo"><img v-if="t.logo" :src="t.logo" alt=""><span v-else>{{ t.name.slice(0, 1) }}</span></div>
           <div class="team-meta"><div class="t-name">{{ t.name }}</div><div class="t-short">{{ (t.members || []).length }}/12 人</div></div>
+          <span v-if="myIds.has(t.id)" class="badge accent">我的战队</span>
           <span class="badge ok">招募中</span>
         </div>
-        <button v-if="!store.guest" class="btn sm" @click="applyTeam(t)">申请加入</button>
+        <button v-if="myIds.has(t.id)" class="btn sm ghost" @click="openView(t)">管理成员</button>
+        <button v-else-if="!store.guest" class="btn sm" @click="applyTeam(t)">申请加入</button>
       </div>
     </div>
     <div v-else class="card"><div class="empty">暂无招募中的战队</div></div>
